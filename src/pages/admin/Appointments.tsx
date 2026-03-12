@@ -3,8 +3,9 @@ import { api, type Appointment } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { CalendarDays, Clock, Phone, User, Car, Wrench, CheckCircle, XCircle, Loader2, Search, Play, Trash2, MessageCircle, Bell } from "lucide-react";
+import { CalendarDays, Clock, Phone, User, Car, Wrench, CheckCircle, XCircle, Loader2, Search, Play, Trash2, MessageCircle, Bell, ClipboardList } from "lucide-react";
 import { sendAppointmentConfirmWhatsApp, sendAppointmentReminderWhatsApp } from "@/lib/whatsapp";
+import { useNavigate } from "react-router-dom";
 
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800",
@@ -24,6 +25,7 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function Appointments() {
+  const navigate = useNavigate();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -70,6 +72,17 @@ export default function Appointments() {
       toast.success("Rappel WhatsApp ouvert");
     } catch {
       toast.error("Impossible d'envoyer le rappel");
+    }
+  };
+
+  const convertToWorkOrder = async (id: number) => {
+    try {
+      await api.post(`/work-orders/from-appointment/${id}`, {});
+      toast.success("Ordre de travail créé à partir du rendez-vous");
+      fetch();
+      navigate("/admin/work-orders");
+    } catch {
+      toast.error("Erreur de conversion");
     }
   };
 
@@ -158,9 +171,14 @@ export default function Appointments() {
                     </>
                   )}
                   {a.status === "confirmed" && (
-                    <Button size="sm" onClick={() => updateStatus(a.id, "in_progress")}>
-                      <Play size={14} className="mr-1" /> Démarrer
-                    </Button>
+                    <>
+                      <Button size="sm" onClick={() => updateStatus(a.id, "in_progress")}>
+                        <Play size={14} className="mr-1" /> Démarrer
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => convertToWorkOrder(a.id)} title="Créer un ordre de travail">
+                        <ClipboardList size={14} className="mr-1" /> Ordre
+                      </Button>
+                    </>
                   )}
                   {a.status === "in_progress" && (
                     <Button size="sm" onClick={() => updateStatus(a.id, "completed")}>

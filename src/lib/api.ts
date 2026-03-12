@@ -103,6 +103,8 @@ export interface Tire {
   min_stock: number;
   location: string | null;
   notes: string | null;
+  barcode: string | null;
+  dot_code: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -148,6 +150,9 @@ export interface WorkOrder {
   status: string;
   technician: string | null;
   notes: string | null;
+  priority: "low" | "normal" | "high" | "urgent";
+  estimated_duration: number | null;
+  actual_duration: number | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
@@ -182,6 +187,12 @@ export interface Invoice {
   tax_rate: number;
   tax_amount: number;
   total: number;
+  discount_amount: number;
+  discount_type: "percent" | "fixed";
+  payment_method: "cash" | "card" | "bank_transfer" | "cheque" | "other";
+  amount_paid: number;
+  is_credit_note: boolean;
+  original_invoice_id: number | null;
   status: string;
   due_date: string | null;
   paid_at: string | null;

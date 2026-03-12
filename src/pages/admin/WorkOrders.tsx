@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { ClipboardList, Plus, Loader2, Play, CheckCircle, Trash2, Eye, FileText, MessageCircle } from "lucide-react";
+import { ClipboardList, Plus, Loader2, Play, CheckCircle, Trash2, Eye, Pencil, Printer, Timer, AlertCircle } from "lucide-react";
 import { sendInvoiceWhatsApp, sendCompletionWhatsApp } from "@/lib/whatsapp";
 
 const statusColors: Record<string, string> = {
@@ -16,6 +16,15 @@ const statusColors: Record<string, string> = {
 };
 const statusLabels: Record<string, string> = {
   all: "Tous", open: "Ouvert", in_progress: "En cours", completed: "Terminé", cancelled: "Annulé",
+};
+const priorityColors: Record<string, string> = {
+  low: "bg-gray-100 text-gray-700",
+  normal: "bg-blue-100 text-blue-700",
+  high: "bg-orange-100 text-orange-700",
+  urgent: "bg-red-100 text-red-700",
+};
+const priorityLabels: Record<string, string> = {
+  low: "Basse", normal: "Normale", high: "Haute", urgent: "Urgente",
 };
 
 interface OrderItem {
@@ -35,10 +44,11 @@ export default function WorkOrders() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<WorkOrder | null>(null);
   const [detailDialog, setDetailDialog] = useState<WorkOrder | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({ client_id: "", vehicle_id: "", technician: "", notes: "" });
+  const [form, setForm] = useState({ client_id: "", vehicle_id: "", technician: "", notes: "", priority: "normal", estimated_duration: "" });
   const [items, setItems] = useState<OrderItem[]>([{ service_id: "", tire_id: "", description: "", quantity: "1", unit_price: "" }]);
 
   const fetchOrders = async () => {
@@ -62,15 +72,44 @@ export default function WorkOrders() {
   }, []);
 
   const openNew = () => {
-    setForm({ client_id: "", vehicle_id: "", technician: "", notes: "" });
+    setEditingOrder(null);
+    setForm({ client_id: "", vehicle_id: "", technician: "", notes: "", priority: "normal", estimated_duration: "" });
     setItems([{ service_id: "", tire_id: "", description: "", quantity: "1", unit_price: "" }]);
     setDialogOpen(true);
   };
 
-  const viewDetail = async (id: number) => {
+  const openEdit = async (id: number) => {
     try {
       const data = await api.get<WorkOrder>(`/work-orders/${id}`);
-      setDetailDialog(data);
+      setEditingOrder(data);
+      setForm({
+        client_id: data.client_id ? String(data.client_id) : "",
+        vehicle_id: data.vehicle_id ? String(data.vehicle_id) : "",
+        technician: data.technician || "",
+        notes: data.notes || "",
+        priority: data.priority || "normal",
+        estimated_duration: data.estimated_duration ? String(data.estimated_duration) : "",
+      });
+      setItems(
+        data.items?.length
+          ? data.items.map((i) => ({
+              service_id: i.service_id ? String(i.service_id) : "",
+              tire_id: i.tire_id ? String(i.tire_id) : "",
+              description: i.description,
+              quantity: String(i.quantity),
+              unit_price: String(i.unit_price),
+            }))
+          : [{ service_id: "", tire_id: "", description: "", quantity: "1", unit_price: "" }]
+      );
+      setDialogOpen(true);
+    } catch {
+      toast.error("Erreur");
+    }
+  };
+
+  const viewDetail = async (id: number) => {
+    try {
+      setDetailDialog(await api.get<WorkOrder>(`/work-orders/${id}`));
     } catch {
       toast.error("Erreur");
     }
@@ -107,11 +146,13 @@ export default function WorkOrders() {
     }
     setSaving(true);
     try {
-      await api.post("/work-orders", {
+      const payload = {
         client_id: Number(form.client_id),
         vehicle_id: form.vehicle_id ? Number(form.vehicle_id) : null,
         technician: form.technician || null,
         notes: form.notes || null,
+        priority: form.priority,
+        estimated_duration: form.estimated_duration ? Number(form.estimated_duration) : null,
         items: validItems.map((i) => ({
           service_id: i.service_id ? Number(i.service_id) : null,
           tire_id: i.tire_id ? Number(i.tire_id) : null,
@@ -119,8 +160,15 @@ export default function WorkOrders() {
           quantity: Number(i.quantity) || 1,
           unit_price: Number(i.unit_price) || 0,
         })),
-      });
-      toast.success("Ordre créé");
+      };
+
+      if (editingOrder) {
+        await api.put(`/work-orders/${editingOrder.id}`, payload);
+        toast.success("Ordre mis à jour");
+      } else {
+        await api.post("/work-orders", payload);
+        toast.success("Ordre créé");
+      }
       setDialogOpen(false);
       fetchOrders();
     } catch {
@@ -143,11 +191,8 @@ export default function WorkOrders() {
             toast.success("Facture envoyée au client par WhatsApp");
           } catch { /* no phone */ }
         }
-
         if (result.appointment_id) {
-          try {
-            await sendCompletionWhatsApp(result.appointment_id);
-          } catch { /* no phone */ }
+          try { await sendCompletionWhatsApp(result.appointment_id); } catch {}
         }
       }
 
@@ -160,6 +205,69 @@ export default function WorkOrders() {
   const deleteOrder = async (id: number) => {
     if (!confirm("Supprimer cet ordre ?")) return;
     try { await api.delete(`/work-orders/${id}`); toast.success("Supprimé"); fetchOrders(); } catch { toast.error("Erreur"); }
+  };
+
+  const printTicket = (order: WorkOrder) => {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    const total = order.items?.reduce((s, i) => s + Number(i.total), 0) || 0;
+    w.document.write(`
+      <html><head><title>Bon de travail #${order.id}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:30px;color:#333;max-width:600px;margin:0 auto}
+        h1{color:#dc2626;font-size:20px;margin-bottom:5px}
+        h2{font-size:16px;margin-top:0;color:#666}
+        .info{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:15px 0;font-size:13px}
+        .info strong{color:#333}
+        table{width:100%;border-collapse:collapse;margin-top:15px;font-size:13px}
+        th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
+        th{background:#f5f5f5}
+        .priority{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:bold}
+        .urgent{background:#fee2e2;color:#dc2626}
+        .high{background:#ffedd5;color:#ea580c}
+        .normal{background:#dbeafe;color:#2563eb}
+        .low{background:#f3f4f6;color:#6b7280}
+        .footer{margin-top:30px;border-top:1px solid #ddd;padding-top:15px;font-size:12px}
+        .sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:30px}
+        .sig div{border-top:1px solid #333;padding-top:5px;text-align:center;font-size:12px}
+        @media print{body{padding:15px}}
+      </style>
+      </head><body>
+      <h1>OCS PNEUS — Bon de Travail</h1>
+      <h2>Ordre #${order.id} <span class="priority ${order.priority}">${priorityLabels[order.priority] || order.priority}</span></h2>
+      <div class="info">
+        <p><strong>Client:</strong> ${order.client_name || "—"}</p>
+        <p><strong>Véhicule:</strong> ${order.vehicle_brand ? `${order.vehicle_brand} ${order.vehicle_model}` : "—"} ${order.license_plate ? `(${order.license_plate})` : ""}</p>
+        <p><strong>Technicien:</strong> ${order.technician || "—"}</p>
+        <p><strong>Date:</strong> ${new Date(order.created_at).toLocaleDateString("fr-FR")}</p>
+        ${order.estimated_duration ? `<p><strong>Durée estimée:</strong> ${order.estimated_duration} min</p>` : ""}
+        ${order.actual_duration ? `<p><strong>Durée réelle:</strong> ${order.actual_duration} min</p>` : ""}
+      </div>
+      ${order.notes ? `<p><em>Notes: ${order.notes}</em></p>` : ""}
+      <table>
+        <tr><th>Description</th><th>Qté</th><th>Prix unit.</th><th>Total</th></tr>
+        ${(order.items || []).map((i) => `<tr><td>${i.description}</td><td>${i.quantity}</td><td>${Number(i.unit_price).toFixed(2)} DH</td><td>${Number(i.total).toFixed(2)} DH</td></tr>`).join("")}
+      </table>
+      <p style="text-align:right;font-weight:bold;font-size:15px;margin-top:10px">Total: ${total.toFixed(2)} DH</p>
+      <div class="sig">
+        <div>Signature technicien</div>
+        <div>Signature client</div>
+      </div>
+      <div class="footer">
+        <p style="text-align:center;color:#888">OCS PNEUS — Imprimé le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR")}</p>
+      </div>
+      </body></html>
+    `);
+    w.document.close();
+    w.print();
+  };
+
+  const getElapsedTime = (order: WorkOrder) => {
+    if (order.status !== "in_progress" || !order.started_at) return null;
+    const elapsed = Math.round((Date.now() - new Date(order.started_at).getTime()) / 60000);
+    const h = Math.floor(elapsed / 60);
+    const m = elapsed % 60;
+    return h > 0 ? `${h}h${m.toString().padStart(2, "0")}` : `${m}min`;
   };
 
   const filteredVehicles = form.client_id ? vehicles.filter((v) => v.client_id === Number(form.client_id)) : vehicles;
@@ -198,59 +306,93 @@ export default function WorkOrders() {
                 <th className="py-3 px-4 font-medium text-muted-foreground">Client</th>
                 <th className="py-3 px-4 font-medium text-muted-foreground">Véhicule</th>
                 <th className="py-3 px-4 font-medium text-muted-foreground">Technicien</th>
+                <th className="py-3 px-4 font-medium text-muted-foreground">Priorité</th>
                 <th className="py-3 px-4 font-medium text-muted-foreground">Statut</th>
+                <th className="py-3 px-4 font-medium text-muted-foreground">Temps</th>
                 <th className="py-3 px-4 font-medium text-muted-foreground">Date</th>
                 <th className="py-3 px-4"></th>
               </tr>
             </thead>
             <tbody>
-              {orders.map((o) => (
-                <tr key={o.id} className="border-b border-border hover:bg-accent/50 transition-colors">
-                  <td className="py-3 px-4 font-mono text-foreground">#{o.id}</td>
-                  <td className="py-3 px-4 text-foreground">{o.client_name || "—"}</td>
-                  <td className="py-3 px-4 text-muted-foreground">{o.vehicle_brand ? `${o.vehicle_brand} ${o.vehicle_model}` : "—"} {o.license_plate ? `(${o.license_plate})` : ""}</td>
-                  <td className="py-3 px-4 text-muted-foreground">{o.technician || "—"}</td>
-                  <td className="py-3 px-4"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[o.status]}`}>{statusLabels[o.status]}</span></td>
-                  <td className="py-3 px-4 text-muted-foreground">{new Date(o.created_at).toLocaleDateString("fr-FR")}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex gap-1 justify-end">
-                      <Button size="sm" variant="ghost" onClick={() => viewDetail(o.id)}><Eye size={14} /></Button>
-                      {o.status === "open" && <Button size="sm" variant="ghost" onClick={() => updateStatus(o.id, "in_progress")}><Play size={14} /></Button>}
-                      {o.status === "in_progress" && <Button size="sm" variant="ghost" onClick={() => updateStatus(o.id, "completed")}><CheckCircle size={14} /></Button>}
-                      <Button size="sm" variant="ghost" onClick={() => deleteOrder(o.id)} className="text-destructive hover:text-destructive"><Trash2 size={14} /></Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {orders.map((o) => {
+                const elapsed = getElapsedTime(o);
+                return (
+                  <tr key={o.id} className={`border-b border-border hover:bg-accent/50 transition-colors ${o.priority === "urgent" ? "bg-red-50/30" : ""}`}>
+                    <td className="py-3 px-4 font-mono text-foreground">#{o.id}</td>
+                    <td className="py-3 px-4 text-foreground">{o.client_name || "—"}</td>
+                    <td className="py-3 px-4 text-muted-foreground">{o.vehicle_brand ? `${o.vehicle_brand} ${o.vehicle_model}` : "—"} {o.license_plate ? `(${o.license_plate})` : ""}</td>
+                    <td className="py-3 px-4 text-muted-foreground">{o.technician || "—"}</td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${priorityColors[o.priority] || priorityColors.normal}`}>
+                        {o.priority === "urgent" && <AlertCircle size={10} className="inline mr-0.5" />}
+                        {priorityLabels[o.priority] || o.priority}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[o.status]}`}>{statusLabels[o.status]}</span></td>
+                    <td className="py-3 px-4 text-muted-foreground">
+                      {elapsed && (
+                        <span className="flex items-center gap-1 text-purple-600 font-medium">
+                          <Timer size={12} className="animate-pulse" /> {elapsed}
+                        </span>
+                      )}
+                      {o.actual_duration && <span className="text-xs">{o.actual_duration}min</span>}
+                    </td>
+                    <td className="py-3 px-4 text-muted-foreground">{new Date(o.created_at).toLocaleDateString("fr-FR")}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex gap-1 justify-end">
+                        <Button size="sm" variant="ghost" onClick={() => viewDetail(o.id)} title="Détails"><Eye size={14} /></Button>
+                        {(o.status === "open" || o.status === "in_progress") && (
+                          <Button size="sm" variant="ghost" onClick={() => openEdit(o.id)} title="Modifier"><Pencil size={14} /></Button>
+                        )}
+                        {o.status === "open" && <Button size="sm" variant="ghost" onClick={() => updateStatus(o.id, "in_progress")} title="Démarrer"><Play size={14} /></Button>}
+                        {o.status === "in_progress" && <Button size="sm" variant="ghost" onClick={() => updateStatus(o.id, "completed")} title="Terminer"><CheckCircle size={14} /></Button>}
+                        <Button size="sm" variant="ghost" onClick={() => deleteOrder(o.id)} className="text-destructive hover:text-destructive" title="Supprimer"><Trash2 size={14} /></Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* New order dialog */}
+      {/* New/Edit order dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Nouvel ordre de travail</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingOrder ? `Modifier ordre #${editingOrder.id}` : "Nouvel ordre de travail"}</DialogTitle></DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Client *</Label>
-                <select value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value, vehicle_id: "" })} className={selectClass}>
+                <select value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value, vehicle_id: "" })} className={selectClass} disabled={!!editingOrder}>
                   <option value="">Sélectionner...</option>
                   {clients.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
                 </select>
               </div>
               <div>
                 <Label>Véhicule</Label>
-                <select value={form.vehicle_id} onChange={(e) => setForm({ ...form, vehicle_id: e.target.value })} className={selectClass}>
+                <select value={form.vehicle_id} onChange={(e) => setForm({ ...form, vehicle_id: e.target.value })} className={selectClass} disabled={!!editingOrder}>
                   <option value="">Sélectionner...</option>
                   {filteredVehicles.map((v) => <option key={v.id} value={v.id}>{v.brand} {v.model} {v.license_plate ? `(${v.license_plate})` : ""}</option>)}
                 </select>
               </div>
             </div>
-            <div>
-              <Label>Technicien</Label>
-              <Input value={form.technician} onChange={(e) => setForm({ ...form, technician: e.target.value })} placeholder="Nom du technicien" />
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label>Technicien</Label>
+                <Input value={form.technician} onChange={(e) => setForm({ ...form, technician: e.target.value })} placeholder="Nom du technicien" />
+              </div>
+              <div>
+                <Label>Priorité</Label>
+                <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className={selectClass}>
+                  {Object.entries(priorityLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label>Durée estimée (min)</Label>
+                <Input type="number" value={form.estimated_duration} onChange={(e) => setForm({ ...form, estimated_duration: e.target.value })} placeholder="60" />
+              </div>
             </div>
 
             <div>
@@ -266,7 +408,7 @@ export default function WorkOrders() {
                         <label className="text-xs text-muted-foreground">Service</label>
                         <select value={item.service_id} onChange={(e) => updateItem(i, "service_id", e.target.value)} className={selectClass}>
                           <option value="">Aucun</option>
-                          {services.map((s) => <option key={s.id} value={s.id}>{s.name} ({Number(s.default_price).toFixed(2)}€)</option>)}
+                          {services.map((s) => <option key={s.id} value={s.id}>{s.name} ({Number(s.default_price).toFixed(2)} DH)</option>)}
                         </select>
                       </div>
                       <div>
@@ -300,7 +442,7 @@ export default function WorkOrders() {
             <div><Label>Notes</Label><Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
             <Button onClick={handleSave} disabled={saving} className="w-full">
               {saving ? <Loader2 className="animate-spin mr-2" size={16} /> : null}
-              Créer l'ordre
+              {editingOrder ? "Mettre à jour" : "Créer l'ordre"}
             </Button>
           </div>
         </DialogContent>
@@ -308,15 +450,33 @@ export default function WorkOrders() {
 
       {/* Detail dialog */}
       <Dialog open={!!detailDialog} onOpenChange={() => setDetailDialog(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Ordre #{detailDialog?.id}</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle>Ordre #{detailDialog?.id}</DialogTitle>
+              <Button size="sm" variant="outline" onClick={() => detailDialog && printTicket(detailDialog)}>
+                <Printer size={14} className="mr-1" /> Imprimer
+              </Button>
+            </div>
+          </DialogHeader>
           {detailDialog && (
             <div className="space-y-4 mt-2">
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <p><span className="text-muted-foreground">Client:</span> {detailDialog.client_name || "—"}</p>
                 <p><span className="text-muted-foreground">Véhicule:</span> {detailDialog.vehicle_brand ? `${detailDialog.vehicle_brand} ${detailDialog.vehicle_model}` : "—"}</p>
                 <p><span className="text-muted-foreground">Technicien:</span> {detailDialog.technician || "—"}</p>
-                <p><span className="text-muted-foreground">Statut:</span> <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[detailDialog.status]}`}>{statusLabels[detailDialog.status]}</span></p>
+                <p>
+                  <span className="text-muted-foreground">Statut:</span>{" "}
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[detailDialog.status]}`}>{statusLabels[detailDialog.status]}</span>
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Priorité:</span>{" "}
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${priorityColors[detailDialog.priority] || priorityColors.normal}`}>{priorityLabels[detailDialog.priority] || detailDialog.priority}</span>
+                </p>
+                {detailDialog.estimated_duration && <p><span className="text-muted-foreground">Durée estimée:</span> {detailDialog.estimated_duration} min</p>}
+                {detailDialog.actual_duration && <p><span className="text-muted-foreground">Durée réelle:</span> {detailDialog.actual_duration} min</p>}
+                {detailDialog.started_at && <p><span className="text-muted-foreground">Démarré:</span> {new Date(detailDialog.started_at).toLocaleString("fr-FR")}</p>}
+                {detailDialog.completed_at && <p><span className="text-muted-foreground">Terminé:</span> {new Date(detailDialog.completed_at).toLocaleString("fr-FR")}</p>}
               </div>
               {detailDialog.notes && <p className="text-sm text-muted-foreground italic">{detailDialog.notes}</p>}
               {detailDialog.items && detailDialog.items.length > 0 && (
@@ -329,13 +489,13 @@ export default function WorkOrders() {
                         <tr key={item.id} className="border-b border-border">
                           <td className="py-1">{item.description}</td>
                           <td className="py-1 text-right">{item.quantity}</td>
-                          <td className="py-1 text-right">{Number(item.unit_price).toFixed(2)}€</td>
-                          <td className="py-1 text-right font-medium">{Number(item.total).toFixed(2)}€</td>
+                          <td className="py-1 text-right">{Number(item.unit_price).toFixed(2)} DH</td>
+                          <td className="py-1 text-right font-medium">{Number(item.total).toFixed(2)} DH</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
-                      <tr><td colSpan={3} className="pt-2 text-right font-semibold">Total:</td><td className="pt-2 text-right font-bold">{detailDialog.items.reduce((s, i) => s + Number(i.total), 0).toFixed(2)}€</td></tr>
+                      <tr><td colSpan={3} className="pt-2 text-right font-semibold">Total:</td><td className="pt-2 text-right font-bold">{detailDialog.items.reduce((s, i) => s + Number(i.total), 0).toFixed(2)} DH</td></tr>
                     </tfoot>
                   </table>
                 </div>
