@@ -3,120 +3,134 @@ import pool from "../db.js";
 
 const router = Router();
 
-// Daily report
 router.get("/daily", async (req, res) => {
   try {
+    const t = req.tenantId;
     const date = req.query.date || new Date().toISOString().split("T")[0];
 
     const [appointments] = await pool.query(
-      `SELECT a.*, c.full_name as client_name_ref FROM appointments a LEFT JOIN clients c ON a.client_id = c.id
-       WHERE a.preferred_date = ? ORDER BY a.preferred_time`,
-      [date]
+      `SELECT a.*, c.full_name AS customer_name
+       FROM appointments a
+       LEFT JOIN customers c ON a.customer_id = c.id AND c.tenant_id = ?
+       WHERE a.tenant_id = ? AND a.scheduled_date = ?
+       ORDER BY a.scheduled_time`,
+      [t, t, date]
     );
 
     const [workOrders] = await pool.query(
-      `SELECT wo.*, c.full_name as client_name, v.brand as vehicle_brand, v.model as vehicle_model
-       FROM work_orders wo LEFT JOIN clients c ON wo.client_id = c.id LEFT JOIN vehicles v ON wo.vehicle_id = v.id
-       WHERE DATE(wo.created_at) = ? ORDER BY wo.created_at`,
-      [date]
+      `SELECT wo.*, c.full_name AS customer_name,
+              v.brand AS vehicle_brand, v.model AS vehicle_model, v.license_plate
+       FROM work_orders wo
+       LEFT JOIN customers c ON wo.customer_id = c.id AND c.tenant_id = ?
+       LEFT JOIN vehicles v ON wo.vehicle_id = v.id AND v.tenant_id = ?
+       WHERE wo.tenant_id = ? AND DATE(wo.created_at) = ?
+       ORDER BY wo.created_at`,
+      [t, t, t, date]
     );
 
     const [invoices] = await pool.query(
-      `SELECT i.*, c.full_name as client_name FROM invoices i LEFT JOIN clients c ON i.client_id = c.id
-       WHERE DATE(i.created_at) = ? ORDER BY i.created_at`,
-      [date]
+      `SELECT i.*, c.full_name AS customer_name
+       FROM invoices i
+       LEFT JOIN customers c ON i.customer_id = c.id AND c.tenant_id = ?
+       WHERE i.tenant_id = ? AND DATE(i.created_at) = ?
+       ORDER BY i.created_at`,
+      [t, t, date]
     );
 
-    const [[dailyRevenue]] = await pool.query(
-      "SELECT COALESCE(SUM(total),0) as total FROM invoices WHERE status = 'paid' AND DATE(paid_at) = ?",
-      [date]
+    const [[revenue]] = await pool.query(
+      `SELECT COALESCE(SUM(total), 0) AS total
+       FROM invoices WHERE tenant_id = ? AND status = 'paid' AND DATE(paid_at) = ?`,
+      [t, date]
     );
 
-    const [newClients] = await pool.query(
-      "SELECT * FROM clients WHERE DATE(created_at) = ?", [date]
+    const [newCustomers] = await pool.query(
+      "SELECT * FROM customers WHERE tenant_id = ? AND DATE(created_at) = ?",
+      [t, date]
     );
 
     res.json({
       date,
-      summary: {
-        appointments: appointments.length,
-        workOrders: workOrders.length,
-        invoices: invoices.length,
-        revenue: dailyRevenue.total,
-        newClients: newClients.length,
-      },
-      appointments,
-      workOrders,
-      invoices,
-      newClients,
+      appointments: { count: appointments.length, list: appointments },
+      work_orders: { count: workOrders.length, list: workOrders },
+      invoices: { count: invoices.length, list: invoices },
+      revenue: revenue.total,
+      new_customers: { count: newCustomers.length, list: newCustomers },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Monthly report
 router.get("/monthly", async (req, res) => {
   try {
+    const t = req.tenantId;
     const year = req.query.year || new Date().getFullYear();
     const month = req.query.month || (new Date().getMonth() + 1);
 
     const [[apptCount]] = await pool.query(
-      "SELECT COUNT(*) as count FROM appointments WHERE YEAR(preferred_date) = ? AND MONTH(preferred_date) = ?",
-      [year, month]
-    );
-    const [[apptByStatus]] = await pool.query(
-      `SELECT
-        SUM(status='pending') as pending, SUM(status='confirmed') as confirmed,
-        SUM(status='completed') as completed, SUM(status='cancelled') as cancelled
-       FROM appointments WHERE YEAR(preferred_date) = ? AND MONTH(preferred_date) = ?`,
-      [year, month]
+      `SELECT COUNT(*) AS count FROM appointments
+       WHERE tenant_id = ? AND YEAR(scheduled_date) = ? AND MONTH(scheduled_date) = ?`,
+      [t, year, month]
     );
 
     const [[woCount]] = await pool.query(
-      "SELECT COUNT(*) as count FROM work_orders WHERE YEAR(created_at) = ? AND MONTH(created_at) = ?",
-      [year, month]
+      `SELECT COUNT(*) AS count FROM work_orders
+       WHERE tenant_id = ? AND YEAR(created_at) = ? AND MONTH(created_at) = ?`,
+      [t, year, month]
     );
 
-    const [[invStats]] = await pool.query(
-      `SELECT COUNT(*) as count, COALESCE(SUM(total),0) as total_amount,
-        SUM(status='paid') as paid_count, COALESCE(SUM(CASE WHEN status='paid' THEN total ELSE 0 END),0) as paid_amount
-       FROM invoices WHERE YEAR(created_at) = ? AND MONTH(created_at) = ?`,
-      [year, month]
+    const [[invTotal]] = await pool.query(
+      `SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
+       FROM invoices WHERE tenant_id = ? AND YEAR(created_at) = ? AND MONTH(created_at) = ?`,
+      [t, year, month]
+    );
+
+    const [[invPaid]] = await pool.query(
+      `SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
+       FROM invoices WHERE tenant_id = ? AND status = 'paid'
+         AND YEAR(paid_at) = ? AND MONTH(paid_at) = ?`,
+      [t, year, month]
     );
 
     const [[revenue]] = await pool.query(
-      "SELECT COALESCE(SUM(total),0) as total FROM invoices WHERE status = 'paid' AND YEAR(paid_at) = ? AND MONTH(paid_at) = ?",
-      [year, month]
+      `SELECT COALESCE(SUM(total), 0) AS total FROM invoices
+       WHERE tenant_id = ? AND status = 'paid' AND YEAR(paid_at) = ? AND MONTH(paid_at) = ?`,
+      [t, year, month]
     );
 
-    const [[newClientsCount]] = await pool.query(
-      "SELECT COUNT(*) as count FROM clients WHERE YEAR(created_at) = ? AND MONTH(created_at) = ?",
-      [year, month]
+    const [[newCustomers]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM customers
+       WHERE tenant_id = ? AND YEAR(created_at) = ? AND MONTH(created_at) = ?`,
+      [t, year, month]
     );
 
     const [topServices] = await pool.query(
-      `SELECT service_type, COUNT(*) as count FROM appointments
-       WHERE YEAR(preferred_date) = ? AND MONTH(preferred_date) = ?
-       GROUP BY service_type ORDER BY count DESC LIMIT 10`,
-      [year, month]
+      `SELECT s.name AS service_name, COUNT(*) AS count
+       FROM work_order_items woi
+       INNER JOIN work_orders wo ON woi.work_order_id = wo.id AND wo.tenant_id = ?
+       INNER JOIN services s ON woi.service_id = s.id
+       WHERE woi.service_id IS NOT NULL
+         AND YEAR(wo.created_at) = ? AND MONTH(wo.created_at) = ?
+       GROUP BY s.id, s.name ORDER BY count DESC LIMIT 10`,
+      [t, year, month]
     );
 
     const [lowStockTires] = await pool.query(
-      "SELECT t.*, tb.name as brand_name FROM tires t LEFT JOIN tire_brands tb ON t.brand_id = tb.id WHERE t.stock_qty <= t.min_stock ORDER BY t.stock_qty"
+      `SELECT t.*, tb.name AS brand_name
+       FROM tires t
+       LEFT JOIN tire_brands tb ON t.brand_id = tb.id AND tb.tenant_id = ?
+       WHERE t.tenant_id = ? AND t.stock_qty <= t.min_stock
+       ORDER BY t.stock_qty`,
+      [t, t]
     );
 
     const [dailyRevenue] = await pool.query(
-      `SELECT DATE(paid_at) as day, SUM(total) as total FROM invoices
-       WHERE status = 'paid' AND YEAR(paid_at) = ? AND MONTH(paid_at) = ?
+      `SELECT DATE(paid_at) AS day, SUM(total) AS total
+       FROM invoices
+       WHERE tenant_id = ? AND status = 'paid'
+         AND YEAR(paid_at) = ? AND MONTH(paid_at) = ?
        GROUP BY day ORDER BY day`,
-      [year, month]
-    );
-
-    const [invoices] = await pool.query(
-      `SELECT i.*, c.full_name as client_name FROM invoices i LEFT JOIN clients c ON i.client_id = c.id
-       WHERE YEAR(i.created_at) = ? AND MONTH(i.created_at) = ? ORDER BY i.created_at`,
-      [year, month]
+      [t, year, month]
     );
 
     res.json({
@@ -124,19 +138,15 @@ router.get("/monthly", async (req, res) => {
       month: Number(month),
       summary: {
         appointments: apptCount.count,
-        appointmentsByStatus: apptByStatus,
-        workOrders: woCount.count,
-        invoices: invStats.count,
-        totalInvoiced: invStats.total_amount,
-        paidInvoices: invStats.paid_count,
-        paidAmount: invStats.paid_amount,
+        work_orders: woCount.count,
+        invoices_total: invTotal.count,
+        invoices_paid: invPaid.count,
         revenue: revenue.total,
-        newClients: newClientsCount.count,
+        new_customers: newCustomers.count,
       },
-      topServices,
-      lowStockTires,
-      dailyRevenue,
-      invoices,
+      top_services: topServices,
+      low_stock_tires: lowStockTires,
+      daily_revenue: dailyRevenue,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

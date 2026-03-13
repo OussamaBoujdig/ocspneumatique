@@ -2,19 +2,9 @@ import { NavLink } from "react-router-dom";
 import { useAuth } from "@/components/AuthProvider";
 import { useI18n } from "@/lib/i18n";
 import {
-  LayoutDashboard,
-  Users,
-  Car,
-  CircleDot,
-  Wrench,
-  CalendarDays,
-  ClipboardList,
-  FileText,
-  BarChart3,
-  LogOut,
-  Menu,
-  X,
-  Languages,
+  LayoutDashboard, Users, Car, CircleDot, Wrench, CalendarDays,
+  ClipboardList, FileText, BarChart3, LogOut, Menu, X, Languages,
+  UserCog, TrendingUp, Package,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -26,12 +16,14 @@ export default function AdminSidebar() {
   const links = [
     { to: "/admin", icon: LayoutDashboard, label: t("sidebar.dashboard"), end: true },
     { to: "/admin/appointments", icon: CalendarDays, label: t("sidebar.appointments") },
-    { to: "/admin/clients", icon: Users, label: t("sidebar.clients") },
+    { to: "/admin/customers", icon: Users, label: t("sidebar.customers") },
     { to: "/admin/vehicles", icon: Car, label: t("sidebar.vehicles") },
     { to: "/admin/tires", icon: CircleDot, label: t("sidebar.tires") },
     { to: "/admin/services", icon: Wrench, label: t("sidebar.services") },
     { to: "/admin/work-orders", icon: ClipboardList, label: t("sidebar.workOrders") },
     { to: "/admin/invoices", icon: FileText, label: t("sidebar.invoices") },
+    { to: "/admin/employees", icon: UserCog, label: t("sidebar.employees") },
+    { to: "/admin/analytics", icon: TrendingUp, label: t("sidebar.analytics") },
     { to: "/admin/reports", icon: BarChart3, label: t("sidebar.reports") },
   ];
 
@@ -41,9 +33,9 @@ export default function AdminSidebar() {
     <nav className="flex flex-col h-full">
       <div className="p-5 border-b border-border">
         <h1 className="font-heading text-xl font-bold text-foreground">
-          OCS<span className="text-primary">PNEUS</span>
+          Tire<span className="text-primary">Garage</span> <span className="text-xs font-normal text-muted-foreground">OS</span>
         </h1>
-        <p className="text-xs text-muted-foreground mt-1">{t("sidebar.title")}</p>
+        <p className="text-xs text-muted-foreground mt-1">{user?.tenant_name || t("sidebar.title")}</p>
       </div>
 
       <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
@@ -68,7 +60,6 @@ export default function AdminSidebar() {
       </div>
 
       <div className="p-4 border-t border-border space-y-3">
-        {/* Language switcher */}
         <button
           onClick={toggleLang}
           className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
@@ -83,7 +74,7 @@ export default function AdminSidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{user?.name}</p>
-            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+            <p className="text-xs text-muted-foreground truncate">{user?.role}</p>
           </div>
         </div>
         <button

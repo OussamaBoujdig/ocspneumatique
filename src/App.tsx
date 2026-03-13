@@ -13,12 +13,14 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import AdminLayout from "./components/admin/AdminLayout";
 import Dashboard from "./pages/admin/Dashboard";
 import Appointments from "./pages/admin/Appointments";
-import Clients from "./pages/admin/Clients";
+import Customers from "./pages/admin/Customers";
 import Vehicles from "./pages/admin/Vehicles";
 import Tires from "./pages/admin/Tires";
 import Services from "./pages/admin/Services";
 import WorkOrders from "./pages/admin/WorkOrders";
 import Invoices from "./pages/admin/Invoices";
+import Employees from "./pages/admin/Employees";
+import Analytics from "./pages/admin/Analytics";
 import Reports from "./pages/admin/Reports";
 
 const queryClient = new QueryClient();
@@ -38,12 +40,14 @@ const App = () => (
                 <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
                   <Route index element={<Dashboard />} />
                   <Route path="appointments" element={<Appointments />} />
-                  <Route path="clients" element={<Clients />} />
+                  <Route path="customers" element={<Customers />} />
                   <Route path="vehicles" element={<Vehicles />} />
                   <Route path="tires" element={<Tires />} />
                   <Route path="services" element={<Services />} />
                   <Route path="work-orders" element={<WorkOrders />} />
                   <Route path="invoices" element={<Invoices />} />
+                  <Route path="employees" element={<Employees />} />
+                  <Route path="analytics" element={<Analytics />} />
                   <Route path="reports" element={<Reports />} />
                 </Route>
                 <Route path="*" element={<NotFound />} />

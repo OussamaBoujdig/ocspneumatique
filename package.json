@@ -10,8 +10,9 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "db:migrate": "cd server && node migrate.js",
-    "db:seed": "cd server && node seed.js"
+    "db:migrate": "cd server && node migrate-saas.js",
+    "db:seed": "cd server && node seed-saas.js",
+    "db:setup": "cd server && node migrate-saas.js && node seed-saas.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

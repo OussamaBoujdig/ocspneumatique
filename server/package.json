@@ -1,11 +1,13 @@
 {
-  "name": "pneumatique-server",
-  "version": "1.0.0",
+  "name": "tiregarage-server",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
-    "seed": "node seed.js"
+    "migrate": "node migrate-saas.js",
+    "seed": "node seed-saas.js",
+    "setup": "node migrate-saas.js && node seed-saas.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
