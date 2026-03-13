@@ -10,6 +10,11 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },
+  server: {
+    allowedHosts: [
+      "ocspneumatique-production.up.railway.app"
+    ]
+  },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
   },
